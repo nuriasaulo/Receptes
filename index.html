@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>El Quadern — Receptes</title>
+<meta name="theme-color" content="#223330" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="El Quadern" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body, #root { height: 100%; margin: 0; }
+  body { overscroll-behavior-y: none; }
+  button, input, select, textarea { font-family: inherit; }
+</style>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.383.0/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+
+const COLORS = {
+  bgDeep: "#223330",
+  paper: "#FBF6EC",
+  paperLine: "#E4DCC8",
+  ink: "#2B2318",
+  muted: "#8A8172",
+  herb: "#6E8A5E",
+  herbDark: "#4F6444",
+  brick: "#B54B3A",
+  gold: "#C79A46",
+};
+
+const DAYS = ["Dilluns", "Dimarts", "Dimecres", "Dijous", "Divendres", "Dissabte", "Diumenge"];
+const MEALS = ["Dinar", "Sopar"];
+const UNITS = ["g", "kg", "ml", "l", "u", "tsp", "tbsp", "cup", "pinch"];
+
+function uid() { return Math.random().toString(36).slice(2, 10); }
+function normKey(name, unit) { return (name||"").trim().toLowerCase() + "||" + (unit||"").trim().toLowerCase(); }
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem("quadern-app-data");
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return { recipes: [], menu: {}, checked: {} };
+}
+function saveData(data) {
+  try { localStorage.setItem("quadern-app-data", JSON.stringify(data)); } catch (e) {}
+}
+
+// simple icon wrapper using lucide
+function Icon({ name, size = 20, color = "currentColor", strokeWidth = 2 }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.innerHTML = "";
+      const el = lucide.createElement(lucide[name]);
+      ref.current.appendChild(el);
+      const svg = ref.current.querySelector("svg");
+      if (svg) {
+        svg.setAttribute("width", size);
+        svg.setAttribute("height", size);
+        svg.setAttribute("stroke", color);
+        svg.setAttribute("stroke-width", strokeWidth);
+      }
+    }
+  }, [name, size, color, strokeWidth]);
+  return <span ref={ref} style={{display:"inline-flex"}} />;
+}
+
+function App() {
+  const initial = loadData();
+  const [tab, setTab] = useState("receptes");
+  const [recipes, setRecipes] = useState(initial.recipes || []);
+  const [menu, setMenu] = useState(initial.menu || {});
+  const [checked, setChecked] = useState(initial.checked || {});
+  const [editingRecipe, setEditingRecipe] = useState(null);
+  const [openRecipeId, setOpenRecipeId] = useState(null);
+  const [pickerCell, setPickerCell] = useState(null);
+
+  useEffect(() => { saveData({ recipes, menu, checked }); }, [recipes, menu, checked]);
+
+  function startNewRecipe() {
+    setEditingRecipe({ id: uid(), name: "", ingredients: [{ id: uid(), name: "", amount: "", unit: "g" }], notes: "" });
+  }
+  function saveRecipe(r) {
+    const clean = {
+      ...r,
+      name: r.name.trim() || "Recepta sense nom",
+      ingredients: r.ingredients.filter(i => i.name.trim()).map(i => ({ ...i, amount: parseFloat(i.amount) || 0 })),
+    };
+    setRecipes(prev => prev.some(p => p.id === clean.id) ? prev.map(p => p.id === clean.id ? clean : p) : [...prev, clean]);
+    setEditingRecipe(null);
+  }
+  function deleteRecipe(id) {
+    setRecipes(prev => prev.filter(r => r.id !== id));
+    setMenu(prev => { const next = {...prev}; Object.keys(next).forEach(k => { if (next[k] === id) delete next[k]; }); return next; });
+    setOpenRecipeId(null);
+  }
+  function assignRecipe(day, meal, recipeId) { setMenu(prev => ({ ...prev, [`${day}|${meal}`]: recipeId })); setPickerCell(null); }
+  function clearCell(day, meal) { setMenu(prev => { const next = {...prev}; delete next[`${day}|${meal}`]; return next; }); }
+
+  const shoppingMap = {};
+  Object.entries(menu).forEach(([key, recipeId]) => {
+    const recipe = recipes.find(r => r.id === recipeId);
+    if (!recipe) return;
+    recipe.ingredients.forEach(ing => {
+      const k = normKey(ing.name, ing.unit);
+      if (!shoppingMap[k]) shoppingMap[k] = { name: ing.name, unit: ing.unit, amount: 0 };
+      shoppingMap[k].amount += Number(ing.amount) || 0;
+    });
+  });
+  const shoppingList = Object.entries(shoppingMap).map(([k,v]) => ({ key: k, ...v })).sort((a,b) => a.name.localeCompare(b.name, "ca"));
+
+  return (
+    <div style={{ background: COLORS.bgDeep, minHeight: "100vh", fontFamily: "'Inter', sans-serif", color: COLORS.ink, display: "flex", flexDirection: "column" }}>
+      <div style={{ padding: "28px 20px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Icon name="ChefHat" size={22} color={COLORS.gold} strokeWidth={1.75} />
+          <span style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 22, color: COLORS.paper, letterSpacing: 0.2 }}>El Quadern</span>
+        </div>
+        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#9FB09A", marginTop: 2, marginLeft: 32, letterSpacing: 0.5 }}>
+          RECEPTES · MENÚ · COMPRA
+        </div>
+      </div>
+
+      <div style={{ flex: 1, padding: "0 16px 100px", overflowY: "auto" }}>
+        {tab === "receptes" && <RecipesTab recipes={recipes} openRecipeId={openRecipeId} setOpenRecipeId={setOpenRecipeId} onEdit={setEditingRecipe} onDelete={deleteRecipe} onNew={startNewRecipe} />}
+        {tab === "menu" && <MenuTab menu={menu} recipes={recipes} onPick={(d,m)=>setPickerCell({day:d,meal:m})} onClear={clearCell} />}
+        {tab === "compra" && <ShoppingTab list={shoppingList} checked={checked} onToggle={(k)=>setChecked(prev=>({...prev,[k]:!prev[k]}))} />}
+      </div>
+
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: COLORS.paper, borderTop: `1px solid ${COLORS.paperLine}`, display: "flex", padding: "10px 8px calc(10px + env(safe-area-inset-bottom))", justifyContent: "space-around" }}>
+        <NavButton icon="BookOpen" label="Receptes" active={tab==="receptes"} onClick={()=>setTab("receptes")} />
+        <NavButton icon="CalendarDays" label="Menú" active={tab==="menu"} onClick={()=>setTab("menu")} />
+        <NavButton icon="ShoppingCart" label="Compra" active={tab==="compra"} onClick={()=>setTab("compra")} badge={shoppingList.length} />
+      </div>
+
+      {editingRecipe && <RecipeEditor recipe={editingRecipe} onCancel={()=>setEditingRecipe(null)} onSave={saveRecipe} />}
+      {pickerCell && <RecipePicker recipes={recipes} onPick={(id)=>assignRecipe(pickerCell.day, pickerCell.meal, id)} onClose={()=>setPickerCell(null)} />}
+    </div>
+  );
+}
+
+function NavButton({ icon, label, active, onClick, badge }) {
+  return (
+    <button onClick={onClick} style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "4px 18px", position: "relative", cursor: "pointer" }}>
+      <Icon name={icon} size={22} color={active ? COLORS.herbDark : COLORS.muted} strokeWidth={active ? 2.2 : 1.75} />
+      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: active ? 600 : 500, color: active ? COLORS.herbDark : COLORS.muted }}>{label}</span>
+      {!!badge && <span style={{ position: "absolute", top: -2, right: 8, background: COLORS.brick, color: COLORS.paper, fontSize: 10, fontFamily: "'IBM Plex Mono', monospace", borderRadius: 10, padding: "1px 5px", minWidth: 14, textAlign: "center" }}>{badge}</span>}
+    </button>
+  );
+}
+
+function RecipesTab({ recipes, openRecipeId, setOpenRecipeId, onEdit, onDelete, onNew }) {
+  return (
+    <div style={{ paddingTop: 14 }}>
+      {recipes.length === 0 && <div style={{ color: "#B9C4B4", fontSize: 14, textAlign: "center", marginTop: 60, lineHeight: 1.6 }}>Encara no tens cap recepta.<br/>Toca el + per afegir la primera.</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {recipes.map(r => {
+          const isOpen = openRecipeId === r.id;
+          return (
+            <div key={r.id} style={{ background: COLORS.paper, borderRadius: 10, position: "relative", boxShadow: "0 3px 10px rgba(0,0,0,0.18)", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, left: 18, width: 30, height: 10, background: COLORS.gold, borderRadius: "0 0 4px 4px" }} />
+              <button onClick={()=>setOpenRecipeId(isOpen ? null : r.id)} style={{ width: "100%", textAlign: "left", background: "none", border: "none", padding: "18px 16px 14px", cursor: "pointer" }}>
+                <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 18, color: COLORS.ink }}>{r.name}</div>
+                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: COLORS.muted, marginTop: 3 }}>{r.ingredients.length} ingredient{r.ingredients.length !== 1 ? "s" : ""}</div>
+              </button>
+              {isOpen && (
+                <div style={{ borderTop: `1px dashed ${COLORS.paperLine}`, padding: "12px 16px 16px" }}>
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14 }}>
+                    {r.ingredients.map(ing => <li key={ing.id} style={{ marginBottom: 4 }}><span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13 }}>{ing.amount} {ing.unit}</span> {ing.name}</li>)}
+                  </ul>
+                  {r.notes && <div style={{ marginTop: 8, fontSize: 13, color: COLORS.muted, fontStyle: "italic" }}>{r.notes}</div>}
+                  <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+                    <button onClick={()=>onEdit(r)} style={{ flex: 1, background: COLORS.herb, color: COLORS.paper, border: "none", borderRadius: 7, padding: "9px 0", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Editar</button>
+                    <button onClick={()=>onDelete(r.id)} style={{ background: "none", border: `1px solid ${COLORS.brick}`, color: COLORS.brick, borderRadius: 7, padding: "9px 14px", cursor: "pointer", display: "flex", alignItems: "center" }}><Icon name="Trash2" size={15} /></button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <button onClick={onNew} aria-label="Nova recepta" style={{ position: "fixed", right: 20, bottom: 92, width: 54, height: 54, borderRadius: "50%", background: COLORS.herb, border: "none", boxShadow: "0 4px 14px rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+        <Icon name="Plus" color={COLORS.paper} size={26} />
+      </button>
+    </div>
+  );
+}
+
+function RecipeEditor({ recipe, onCancel, onSave }) {
+  const [r, setR] = useState(recipe);
+  function updateIngredient(id, field, value) { setR(prev => ({ ...prev, ingredients: prev.ingredients.map(i => i.id === id ? { ...i, [field]: value } : i) })); }
+  function addIngredient() { setR(prev => ({ ...prev, ingredients: [...prev.ingredients, { id: uid(), name: "", amount: "", unit: "g" }] })); }
+  function removeIngredient(id) { setR(prev => ({ ...prev, ingredients: prev.ingredients.filter(i => i.id !== id) })); }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(20,28,25,0.6)", display: "flex", alignItems: "flex-end", zIndex: 20 }} onClick={onCancel}>
+      <div onClick={(e)=>e.stopPropagation()} style={{ background: COLORS.paper, width: "100%", maxHeight: "88vh", overflowY: "auto", borderRadius: "16px 16px 0 0", padding: "20px 18px calc(20px + env(safe-area-inset-bottom))" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 19 }}>{recipe.name ? "Editar recepta" : "Nova recepta"}</span>
+          <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer" }}><Icon name="X" size={22} color={COLORS.muted} /></button>
+        </div>
+        <input value={r.name} onChange={(e)=>setR({...r, name: e.target.value})} placeholder="Nom de la recepta" style={{ width: "100%", fontFamily: "'Fraunces', serif", fontSize: 17, padding: "10px 2px", border: "none", borderBottom: `2px solid ${COLORS.paperLine}`, background: "transparent", marginTop: 14, outline: "none" }} />
+        <div style={{ marginTop: 18, fontSize: 12, fontFamily: "'IBM Plex Mono', monospace", color: COLORS.muted }}>INGREDIENTS</div>
+        {r.ingredients.map(ing => (
+          <div key={ing.id} style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
+            <input value={ing.amount} onChange={(e)=>updateIngredient(ing.id,"amount",e.target.value)} placeholder="0" inputMode="decimal" style={{ width: 50, padding: "8px 6px", borderRadius: 6, border: `1px solid ${COLORS.paperLine}`, fontFamily: "'IBM Plex Mono', monospace", textAlign: "center" }} />
+            <select value={ing.unit} onChange={(e)=>updateIngredient(ing.id,"unit",e.target.value)} style={{ padding: "8px 4px", borderRadius: 6, border: `1px solid ${COLORS.paperLine}`, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13 }}>
+              {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+            </select>
+            <input value={ing.name} onChange={(e)=>updateIngredient(ing.id,"name",e.target.value)} placeholder="ingredient" style={{ flex: 1, padding: "8px 10px", borderRadius: 6, border: `1px solid ${COLORS.paperLine}`, fontFamily: "'Inter', sans-serif" }} />
+            <button onClick={()=>removeIngredient(ing.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}><Icon name="X" size={16} color={COLORS.muted} /></button>
+          </div>
+        ))}
+        <button onClick={addIngredient} style={{ marginTop: 10, background: "none", border: `1px dashed ${COLORS.herb}`, color: COLORS.herbDark, borderRadius: 7, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>+ Afegir ingredient</button>
+        <div style={{ marginTop: 18, fontSize: 12, fontFamily: "'IBM Plex Mono', monospace", color: COLORS.muted }}>NOTES / PASSOS</div>
+        <textarea value={r.notes} onChange={(e)=>setR({...r, notes: e.target.value})} rows={3} placeholder="Passos, temps de cocció, trucs..." style={{ width: "100%", marginTop: 6, padding: 10, borderRadius: 7, border: `1px solid ${COLORS.paperLine}`, fontFamily: "'Inter', sans-serif", fontSize: 14, resize: "vertical" }} />
+        <button onClick={()=>onSave(r)} style={{ width: "100%", marginTop: 20, background: COLORS.herbDark, color: COLORS.paper, border: "none", borderRadius: 9, padding: "13px 0", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Desar recepta</button>
+      </div>
+    </div>
+  );
+}
+
+function MenuTab({ menu, recipes, onPick, onClear }) {
+  return (
+    <div style={{ paddingTop: 14 }}>
+      {recipes.length === 0 && <div style={{ color: "#B9C4B4", fontSize: 14, textAlign: "center", marginTop: 40, lineHeight: 1.6 }}>Afegeix alguna recepta primer per poder-la planificar aquí.</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {DAYS.map(day => (
+          <div key={day} style={{ background: COLORS.paper, borderRadius: 10, padding: "10px 14px", boxShadow: "0 2px 6px rgba(0,0,0,0.14)" }}>
+            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: COLORS.gold, letterSpacing: 0.5, marginBottom: 6 }}>{day.toUpperCase()}</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {MEALS.map(meal => {
+                const key = `${day}|${meal}`;
+                const recipeId = menu[key];
+                const recipe = recipes.find(r => r.id === recipeId);
+                return (
+                  <button key={meal} onClick={()=>onPick(day, meal)} style={{ flex: 1, textAlign: "left", background: recipe ? "#F1ECDD" : "transparent", border: `1px solid ${COLORS.paperLine}`, borderRadius: 7, padding: "8px 10px", cursor: "pointer", position: "relative" }}>
+                    <div style={{ fontSize: 10, color: COLORS.muted, fontWeight: 600 }}>{meal.toUpperCase()}</div>
+                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 14, marginTop: 2, color: recipe ? COLORS.ink : COLORS.muted }}>{recipe ? recipe.name : "+ Triar"}</div>
+                    {recipe && <span onClick={(e)=>{e.stopPropagation(); onClear(day, meal);}} style={{ position: "absolute", top: 4, right: 4, color: COLORS.muted, cursor: "pointer" }}><Icon name="X" size={13} /></span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RecipePicker({ recipes, onPick, onClose }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(20,28,25,0.6)", display: "flex", alignItems: "flex-end", zIndex: 20 }} onClick={onClose}>
+      <div onClick={(e)=>e.stopPropagation()} style={{ background: COLORS.paper, width: "100%", maxHeight: "70vh", overflowY: "auto", borderRadius: "16px 16px 0 0", padding: "18px 16px calc(18px + env(safe-area-inset-bottom))" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <span style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 17 }}>Tria una recepta</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><Icon name="X" size={20} color={COLORS.muted} /></button>
+        </div>
+        {recipes.length === 0 && <div style={{ color: COLORS.muted, fontSize: 14 }}>No tens cap recepta encara.</div>}
+        {recipes.map(r => <button key={r.id} onClick={()=>onPick(r.id)} style={{ width: "100%", textAlign: "left", background: "none", border: "none", borderBottom: `1px solid ${COLORS.paperLine}`, padding: "12px 4px", fontFamily: "'Fraunces', serif", fontSize: 15, cursor: "pointer" }}>{r.name}</button>)}
+      </div>
+    </div>
+  );
+}
+
+function ShoppingTab({ list, checked, onToggle }) {
+  if (list.length === 0) return <div style={{ color: "#B9C4B4", fontSize: 14, textAlign: "center", marginTop: 60, lineHeight: 1.6, paddingTop: 14 }}>La llista es genera sola<br/>quan assignis receptes al menú setmanal.</div>;
+  const pending = list.filter(i => !checked[i.key]);
+  const done = list.filter(i => checked[i.key]);
+  return (
+    <div style={{ paddingTop: 14 }}>
+      <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#9FB09A", marginBottom: 8 }}>{pending.length} PER COMPRAR · {done.length} FETS</div>
+      <div style={{ background: COLORS.paper, borderRadius: 10, padding: "6px 4px", boxShadow: "0 2px 8px rgba(0,0,0,0.16)" }}>
+        {[...pending, ...done].map(item => {
+          const isChecked = !!checked[item.key];
+          return (
+            <div key={item.key} onClick={()=>onToggle(item.key)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 12px", borderBottom: `1px solid ${COLORS.paperLine}`, cursor: "pointer", opacity: isChecked ? 0.5 : 1 }}>
+              <div style={{ width: 20, height: 20, borderRadius: 5, border: `1.5px solid ${isChecked ? COLORS.herb : COLORS.muted}`, background: isChecked ? COLORS.herb : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                {isChecked && <Icon name="Check" size={13} color={COLORS.paper} strokeWidth={3} />}
+              </div>
+              <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, color: COLORS.muted, minWidth: 62 }}>{Math.round(item.amount*100)/100} {item.unit}</div>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, textDecoration: isChecked ? "line-through" : "none", textTransform: "capitalize" }}>{item.name}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
