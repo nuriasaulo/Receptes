@@ -21,7 +21,6 @@
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<script src="https://unpkg.com/lucide@0.383.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -58,24 +57,24 @@ function saveData(data) {
   try { localStorage.setItem("quadern-app-data", JSON.stringify(data)); } catch (e) {}
 }
 
-// simple icon wrapper using lucide
+// self-contained icon set (no external dependency)
+const ICON_PATHS = {
+  ChefHat: <><path d="M6 18h12v3H6z" /><path d="M6.5 18c-.3-2 .2-3.5 1-4.5C6.6 12.7 6 11.4 6 10a4 4 0 0 1 4-4c.3 0 .6 0 .9.1A4 4 0 0 1 18 10c0 1.4-.6 2.7-1.5 3.5.8 1 1.3 2.5 1 4.5" /></>,
+  BookOpen: <><path d="M2 5.5c2.5-1.5 5.5-1.5 8 0v13c-2.5-1.5-5.5-1.5-8 0z" /><path d="M20 5.5c-2.5-1.5-5.5-1.5-8 0v13c2.5-1.5 5.5-1.5 8 0z" /></>,
+  CalendarDays: <><rect x="3" y="4.5" width="18" height="16" rx="2" /><path d="M3 9.5h18" /><path d="M8 2.5v4M16 2.5v4" /></>,
+  ShoppingCart: <><circle cx="9" cy="20" r="1.4" /><circle cx="17" cy="20" r="1.4" /><path d="M2.5 3h2l2.3 11.5a2 2 0 0 0 2 1.6h7.6a2 2 0 0 0 2-1.6L20 7.5H6" /></>,
+  Plus: <><path d="M12 5v14M5 12h14" /></>,
+  X: <><path d="M6 6l12 12M18 6L6 18" /></>,
+  Trash2: <><path d="M4 7h16" /><path d="M9 7V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V7" /><path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13" /><path d="M10 11v6M14 11v6" /></>,
+  Check: <><path d="M4 12l6 6L20 6" /></>,
+};
+
 function Icon({ name, size = 20, color = "currentColor", strokeWidth = 2 }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    if (ref.current) {
-      ref.current.innerHTML = "";
-      const el = lucide.createElement(lucide[name]);
-      ref.current.appendChild(el);
-      const svg = ref.current.querySelector("svg");
-      if (svg) {
-        svg.setAttribute("width", size);
-        svg.setAttribute("height", size);
-        svg.setAttribute("stroke", color);
-        svg.setAttribute("stroke-width", strokeWidth);
-      }
-    }
-  }, [name, size, color, strokeWidth]);
-  return <span ref={ref} style={{display:"inline-flex"}} />;
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      {ICON_PATHS[name]}
+    </svg>
+  );
 }
 
 function App() {
